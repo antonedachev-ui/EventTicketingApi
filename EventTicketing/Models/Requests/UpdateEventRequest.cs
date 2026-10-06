@@ -1,0 +1,22 @@
+using System.ComponentModel.DataAnnotations;
+
+namespace EventTicketing.Models.Requests;
+
+public sealed class UpdateEventRequest
+{
+    [Required]
+    [StringLength(256)]
+    public string Name { get; set; } = string.Empty;
+
+    public string? Description { get; set; }
+
+    [Required]
+    [StringLength(256)]
+    public string Venue { get; set; } = string.Empty;
+
+    public DateTime EventDateTimeUtc { get; set; }
+
+    [Required]
+    [MinLength(1)]
+    public List<UpdatePricingTierRequest> PricingTiers { get; set; } = [];
+}

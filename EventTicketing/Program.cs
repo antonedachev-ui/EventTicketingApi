@@ -1,4 +1,6 @@
 
+using EventTicketing.Api.Data;
+
 namespace EventTicketing
 {
     public class Program
@@ -8,6 +10,9 @@ namespace EventTicketing
             var builder = WebApplication.CreateBuilder(args);
 
             // Add services to the container.
+            builder.Services.AddSingleton<ISqlStoredProcedureExecutor,SqlStoredProcedureExecutor>();
+
+            builder.Services.AddScoped<IEventDataAccess, EventDataAccess>();
 
             builder.Services.AddControllers();
             // Learn more about configuring OpenAPI at https://aka.ms/aspnet/openapi
