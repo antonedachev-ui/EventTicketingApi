@@ -1,6 +1,46 @@
 @EventTicketing_HostAddress = http://localhost:5074
 
-GET {{EventTicketing_HostAddress}}/weatherforecast/
-Accept: application/json
+POST {{EventTicketing_HostAddress}}/api/events
+Content-Type: application/json
+{
+  "name": "API Test Event",
+  "description": "Created through the API",
+  "venue": "Test Venue",
+  "eventDateTimeUtc": "2026-12-15T19:30:00Z",
+  "pricingTiers": [
+    {
+      "name": "Standard",
+      "price": 25.00,
+      "totalCapacity": 100
+    },
+    {
+      "name": "Premium",
+      "price": 50.00,
+      "totalCapacity": 20
+    }
+  ]
+}
 
 ###
+
+POST {{EventTicketing_HostAddress}}/api/ticket-purchases
+Content-Type: application/json
+
+{
+  "pricingTierId": 8,
+  "quantity": 3
+}
+
+###
+
+GET {{EventTicketing_HostAddress}}/api/events/5/availability
+
+###
+
+POST {{EventTicketing_HostAddress}}/api/ticket-purchases
+Content-Type: application/json
+
+{
+  "pricingTierId": 8,
+  "quantity": 100
+}

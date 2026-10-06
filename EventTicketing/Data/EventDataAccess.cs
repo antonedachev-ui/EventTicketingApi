@@ -1,6 +1,6 @@
 ﻿using EventTicketing.Api.Data.StoredProcedureResults;
 using EventTicketing.Models.Responses;
-using Microsoft.AspNetCore.Mvc;
+using EventTicketing.Models.Requests;
 using Microsoft.Data.SqlClient;
 using System.Data;
 
@@ -13,6 +13,29 @@ namespace EventTicketing.Api.Data
         public EventDataAccess(ISqlStoredProcedureExecutor executor)
         {
             _executor = executor;
+        }
+
+        public async Task<OperationResult<EventCreateResult, EventResponse>> CreateEventAsync(
+            CreateEventRequest request, CancellationToken cancellationToken = default)
+        {
+            var tiers = CreatePricingTierTable();
+            foreach (var tier in request.PricingTiers)
+            {
+                tiers.Rows.Add(DBNull.Value, tier.Name, tier.Price, tier.TotalCapacity);
+            }
+
+            var result = await _executor.ExecuteAsync<EventResponse?>(
+                "dbo.Event_Create",
+                parameters => AddEventParameters(parameters, request.Name, request.Description,
+                    request.Venue, request.EventDateTimeUtc, tiers),
+                (reader, ct) => ReadEventWithTiersAsync(reader, ct, "Event_Create"),
+                cancellationToken);
+
+            return new OperationResult<EventCreateResult, EventResponse>
+            {
+                Status = GetStatus<EventCreateResult>(result.ReturnCode, "Event_Create"),
+                Data = result.Data
+            };
         }
 
         public async Task<OperationResult<EventGetResult, EventResponse>> GetEventAsync(int eventId, CancellationToken cancellationToken = default)
@@ -67,6 +90,174 @@ namespace EventTicketing.Api.Data
             };
         }
 
+        public async Task<OperationResult<EventUpdateResult, EventResponse>> UpdateEventAsync(
+            int eventId, UpdateEventRequest request, CancellationToken cancellationToken = default)
+        {
+            var tiers = CreatePricingTierTable();
+            foreach (var tier in request.PricingTiers)
+            {
+                tiers.Rows.Add((object?)tier.PricingTierId ?? DBNull.Value,
+                    tier.Name, tier.Price, tier.TotalCapacity);
+            }
+
+            var result = await _executor.ExecuteAsync<EventResponse?>(
+                "dbo.Event_Update",
+                parameters =>
+                {
+                    parameters.Add("@EventId", SqlDbType.Int).Value = eventId;
+                    AddEventParameters(parameters, request.Name, request.Description,
+                        request.Venue, request.EventDateTimeUtc, tiers);
+                },
+                (reader, ct) => ReadEventWithTiersAsync(reader, ct, "Event_Update"),
+                cancellationToken);
+
+            return new OperationResult<EventUpdateResult, EventResponse>
+            {
+                Status = GetStatus<EventUpdateResult>(result.ReturnCode, "Event_Update"),
+                Data = result.Data
+            };
+        }
+
+        public async Task<EventDeleteResult> DeleteEventAsync(
+            int eventId, CancellationToken cancellationToken = default)
+        {
+            var result = await _executor.ExecuteAsync<object?>(
+                "dbo.Event_Delete",
+                parameters => parameters.Add("@EventId", SqlDbType.Int).Value = eventId,
+                (_, _) => Task.FromResult<object?>(null),
+                cancellationToken);
+
+            return GetStatus<EventDeleteResult>(result.ReturnCode, "Event_Delete");
+        }
+
+        public async Task<OperationResult<EventAvailabilityResult, EventAvailabilityResponse>> GetEventAvailabilityAsync(
+            int eventId, CancellationToken cancellationToken = default)
+        {
+            var result = await _executor.ExecuteAsync(
+                "dbo.Event_GetAvailability",
+                parameters => parameters.Add("@EventId", SqlDbType.Int).Value = eventId,
+                async (reader, ct) => new EventAvailabilityResponse
+                {
+                    EventId = eventId,
+                    PricingTiers = await reader.ReadListAsync(MapPricingTier, ct)
+                },
+                cancellationToken);
+
+            return new OperationResult<EventAvailabilityResult, EventAvailabilityResponse>
+            {
+                Status = GetStatus<EventAvailabilityResult>(result.ReturnCode, "Event_GetAvailability"),
+                Data = result.Data
+            };
+        }
+
+        public async Task<OperationResult<EventSalesSummaryResult, EventSalesSummaryResponse>> GetEventSalesSummaryAsync(
+            int eventId, CancellationToken cancellationToken = default)
+        {
+            var result = await _executor.ExecuteAsync<EventSalesSummaryResponse?>(
+                "dbo.Event_GetSalesSummary",
+                parameters => parameters.Add("@EventId", SqlDbType.Int).Value = eventId,
+                async (reader, ct) => await reader.ReadAsync(ct) ? MapSalesSummary(reader) : null,
+                cancellationToken);
+
+            return new OperationResult<EventSalesSummaryResult, EventSalesSummaryResponse>
+            {
+                Status = GetStatus<EventSalesSummaryResult>(result.ReturnCode, "Event_GetSalesSummary"),
+                Data = result.Data
+            };
+        }
+
+        public async Task<OperationResult<TicketPurchaseResult, TicketPurchaseResponse>> PurchaseTicketAsync(
+            PurchaseTicketRequest request, CancellationToken cancellationToken = default)
+        {
+            var result = await _executor.ExecuteAsync<TicketPurchaseResponse?>(
+                "dbo.Ticket_Purchase",
+                parameters =>
+                {
+                    parameters.Add("@PricingTierId", SqlDbType.Int).Value = request.PricingTierId;
+                    parameters.Add("@Quantity", SqlDbType.Int).Value = request.Quantity;
+                },
+                async (reader, ct) => reader.FieldCount > 0 && await reader.ReadAsync(ct)
+                    ? MapTicketPurchase(reader)
+                    : null,
+                cancellationToken);
+
+            return new OperationResult<TicketPurchaseResult, TicketPurchaseResponse>
+            {
+                Status = GetStatus<TicketPurchaseResult>(result.ReturnCode, "Ticket_Purchase"),
+                Data = result.Data
+            };
+        }
+
+        private static void AddEventParameters(SqlParameterCollection parameters,
+            string name, string? description, string venue, DateTime eventDateTimeUtc,
+            DataTable pricingTiers)
+        {
+            parameters.Add("@Name", SqlDbType.NVarChar, 256).Value = name;
+            parameters.Add("@Description", SqlDbType.NVarChar, 512).Value =
+                (object?)description ?? DBNull.Value;
+            parameters.Add("@Venue", SqlDbType.NVarChar, 256).Value = venue;
+            parameters.Add("@EventDateTimeUtc", SqlDbType.DateTime2).Value = eventDateTimeUtc;
+            parameters.Add(new SqlParameter("@PricingTiers", SqlDbType.Structured)
+            {
+                TypeName = "dbo.PricingTierInputType",
+                Value = pricingTiers
+            });
+        }
+
+        private static DataTable CreatePricingTierTable()
+        {
+            // The column order and types must match dbo.PricingTierInputType.
+            var tiers = new DataTable();
+            tiers.Columns.Add("PricingTierId", typeof(int));
+            tiers.Columns.Add("Name", typeof(string));
+            tiers.Columns.Add("Price", typeof(decimal));
+            tiers.Columns.Add("TotalCapacity", typeof(int));
+            return tiers;
+        }
+
+        private static async Task<EventResponse?> ReadEventWithTiersAsync(
+            SqlDataReader reader, CancellationToken cancellationToken, string procedureName)
+        {
+            // Create and update return no result sets for expected business failures.
+            if (reader.FieldCount == 0)
+            {
+                return null;
+            }
+
+            EventResponse? eventResponse = null;
+            if (await reader.ReadAsync(cancellationToken))
+            {
+                eventResponse = MapEvent(reader);
+            }
+
+            if (!await reader.NextResultAsync(cancellationToken))
+            {
+                throw new InvalidOperationException(
+                    $"{procedureName} did not return the expected pricing tier result set.");
+            }
+
+            var tiers = await reader.ReadListAsync(MapPricingTier, cancellationToken);
+            if (eventResponse is not null)
+            {
+                eventResponse.PricingTiers = tiers;
+            }
+
+            return eventResponse;
+        }
+
+        private static TStatus GetStatus<TStatus>(int returnCode, string procedureName)
+            where TStatus : struct, Enum
+        {
+            var status = (TStatus)Enum.ToObject(typeof(TStatus), returnCode);
+            if (!Enum.IsDefined(status))
+            {
+                throw new InvalidOperationException(
+                    $"Unexpected {procedureName} return code: {returnCode}");
+            }
+
+            return status;
+        }
+
         private static EventResponse MapEvent(SqlDataReader reader)
         {
             var descriptionOrdinal = reader.GetOrdinal("Description");
@@ -101,6 +292,31 @@ namespace EventTicketing.Api.Data
                 TotalCapacity = reader.GetInt32(reader.GetOrdinal("TotalCapacity")),
 
                 AvailableCapacity = reader.GetInt32(reader.GetOrdinal("AvailableCapacity"))
+            };
+        }
+
+        private static EventSalesSummaryResponse MapSalesSummary(SqlDataReader reader)
+        {
+            return new EventSalesSummaryResponse
+            {
+                EventId = reader.GetInt32(reader.GetOrdinal("EventId")),
+                EventName = reader.GetString(reader.GetOrdinal("EventName")),
+                TicketsSold = reader.GetInt32(reader.GetOrdinal("TicketsSold")),
+                TotalRevenue = reader.GetDecimal(reader.GetOrdinal("TotalRevenue"))
+            };
+        }
+
+        private static TicketPurchaseResponse MapTicketPurchase(SqlDataReader reader)
+        {
+            return new TicketPurchaseResponse
+            {
+                PurchaseId = reader.GetInt64(reader.GetOrdinal("PurchaseId")),
+                PricingTierId = reader.GetInt32(reader.GetOrdinal("PricingTierId")),
+                Quantity = reader.GetInt32(reader.GetOrdinal("Quantity")),
+                UnitPrice = reader.GetDecimal(reader.GetOrdinal("UnitPrice")),
+                // SQL datetime2 does not retain DateTime.Kind; this column stores UTC values.
+                PurchasedAtUtc = DateTime.SpecifyKind(
+                    reader.GetDateTime(reader.GetOrdinal("PurchasedAtUtc")), DateTimeKind.Utc)
             };
         }
     }
