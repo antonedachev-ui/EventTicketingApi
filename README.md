@@ -15,18 +15,18 @@ The system supports event and pricing-tier management, ticket purchasing, ticket
 
 The application uses SQL Server stored procedures for database access rather than an ORM.
 
-## Current Architecture
+## Architecture
 
-The intended application structure is:
+The application structure is:
 
 ```text
 HTTP / REST
     |
 ASP.NET Core Controllers
     |
-Application / Service Layer
+Data Access
     |
-ADO.NET Database Access
+Generic ADO.NET Stored Procedure Executor
     |
 SQL Server Stored Procedures
     |
@@ -34,6 +34,20 @@ SQL Server
 ```
 
 The solution deliberately keeps the architecture relatively small and avoids introducing additional frameworks or abstractions unless they provide a clear benefit for the requirements of the exercise.
+
+## API Endpoints
+
+| Method | Endpoint | Description |
+|---|---|---|
+| `POST` | `/api/events` | Create an event with pricing tiers |
+| `GET` | `/api/events/{id}` | Get an event and its pricing tiers |
+| `PUT` | `/api/events/{id}` | Update an event and its pricing tiers |
+| `DELETE` | `/api/events/{id}` | Soft-delete an event |
+| `GET` | `/api/events/{id}/availability` | Get current ticket availability |
+| `GET` | `/api/events/{id}/sales-summary` | Get ticket sales and revenue summary |
+| `POST` | `/api/ticket-purchases` | Purchase tickets from a pricing tier |
+
+Expected business failures are represented using appropriate HTTP status codes, including `400 Bad Request`, `404 Not Found`, and `409 Conflict`. Unexpected failures are returned as server errors using ASP.NET Core Problem Details.
 
 ## Database Design
 
@@ -151,27 +165,74 @@ Database access can be restricted to execution of the application's stored proce
 
 ## Testing
 
-The project will use NUnit.
+The project uses NUnit and contains both unit and integration tests.
 
-Tests are intended to cover both normal behaviour and important edge cases, particularly:
+Unit tests exercise API/application behaviour in isolation.
 
-- Event creation and update
-- Ticket purchasing
-- Insufficient ticket capacity
-- Prevention of overselling
-- Capacity changes after tickets have been sold
-- Soft deletion
-- Availability
-- Sales reporting
-- Concurrent ticket purchase and event update/delete behaviour
+Integration tests exercise database-dependent behaviour against SQL Server, including ticket purchasing and the concurrency behaviour used to prevent overselling.
 
-Database behaviour will primarily be exercised through integration tests.
+### Running tests
+
+From the repository root, run the unit tests without SQL Server:
+
+```powershell
+dotnet test EventTicketing.Tests/EventTicketing.Tests.csproj --filter "TestCategory=Unit"
+```
+
+For a clean SQL Server setup, run the scripts in the `Database` directory in this order:
+
+1. `00_CreateDatabase.sql`
+2. `01_CreateTables.sql`
+3. `02_CreateStoredProcedures.sql`
+4. `03_DBPermissions.sql` (when using the restricted application login; create that login separately first)
+
+`04_InsertTestData.sql` is optional sample data. Integration tests arrange their own data and do not require it.
+
+Integration tests require a dedicated SQL Server `EventTicketing` database prepared as above. Set the connection string in the same PowerShell session that runs the tests:
+
+```powershell
+$env:EVENT_TICKETING_TEST_CONNECTION_STRING = '<test database connection string>'
+dotnet test EventTicketing.Tests/EventTicketing.Tests.csproj --filter "TestCategory=Integration"
+```
+
+The integration tests read this environment variable directly; values in .NET user secrets are not read. When the variable is unset, the integration tests are skipped. The tests create their own uniquely named data and do not use `04_InsertTestData.sql`. Teardown soft-deletes their events, leaving historical rows in the test database.
 
 ## Running the Project
 
-Setup and execution instructions will be added as the application implementation is completed.
+### Prerequisites
 
-The SQL Server database scripts are located in the `Database` directory.
+- .NET 10 SDK
+- SQL Server
+
+### Database setup
+
+Run the scripts in the `Database` directory in order:
+
+1. `00_CreateDatabase.sql`
+2. `01_CreateTables.sql`
+3. `02_CreateStoredProcedures.sql`
+4. `03_DBPermissions.sql` if using the restricted application login; create that login separately before running this script.
+
+`04_InsertTestData.sql` is optional and inserts sample development data.
+
+Do not commit the application login's password or connection string to source control.
+
+### Connection string
+
+For local development, configure the `EventTicketing` connection string using .NET User Secrets rather than committing credentials to the repository. User Secrets are loaded by default when the API runs in the `Development` environment; configure the connection string separately for other environments.
+
+For example, from the API project directory:
+
+```powershell
+dotnet user-secrets init
+dotnet user-secrets set "ConnectionStrings:EventTicketing" "<connection string>"
+```
+
+### Start the API
+
+Run the API project from Visual Studio, or use `dotnet run` from the API project directory.
+
+The API can then be exercised using the included `EventTicketing.http` file or another HTTP client.
 
 ## Design Scope
 
@@ -192,6 +253,6 @@ Areas that would require further consideration in a production system include:
 
 ## AI Assistance
 
-AI tools were used during development as a review and development aid, including discussion of design trade-offs, concurrency behaviour, code review, and documentation.
+AI tools were used during development as a review and development aid, including discussion of design trade-offs, concurrency behaviour, code review, test development, and documentation.
 
-The implementation decisions and resulting code were reviewed and understood by the author.
+AI-assisted changes were reviewed, tested, and understood by the author.
