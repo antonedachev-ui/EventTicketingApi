@@ -37,6 +37,10 @@ ALTER ROLE EventTicketingService ADD MEMBER EventTicketingApp;
 
 
 GO
+GRANT EXECUTE, REFERENCES
+    ON TYPE::dbo.PricingTierInputType TO EventTicketingService;
+
+GO
 GRANT EXECUTE
     ON dbo.Event_Create TO EventTicketingService;
 

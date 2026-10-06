@@ -1,3 +1,6 @@
+USE EventTicketing;
+GO
+
 CREATE OR ALTER PROCEDURE dbo.Ticket_Purchase
     @PricingTierId INT,
     @Quantity INT
@@ -256,18 +259,6 @@ BEGIN
         HAVING COUNT(PricingTierId) > 1
     ) RETURN 9; -- InvalidPricingTierId
 
-    IF EXISTS
-    (
-        SELECT 1
-        FROM @PricingTiers AS PTU
-        LEFT JOIN dbo.PricingTier AS PT
-           ON PT.PricingTierId = PTU.PricingTierId
-           AND PT.EventId = @EventId
-           AND PT.PricingTierDeletionTimestampUtc IS NULL
-        WHERE PTU.PricingTierId IS NOT NULL
-          AND PT.PricingTierId IS NULL
-    ) RETURN 9; -- InvalidPricingTierId
-
     CREATE TABLE #PricingTierForUpdate
     (
         PricingTierId INT NULL,
@@ -295,6 +286,23 @@ BEGIN
         BEGIN
             ROLLBACK TRANSACTION;
             RETURN 1; -- EventNotFound
+        END;
+
+        -- Validate tier IDs after locking the event so concurrent updates cannot invalidate the check.
+        IF EXISTS
+        (
+            SELECT 1
+            FROM @PricingTiers AS PTU
+            LEFT JOIN dbo.PricingTier AS PT
+               ON PT.PricingTierId = PTU.PricingTierId
+               AND PT.EventId = @EventId
+               AND PT.PricingTierDeletionTimestampUtc IS NULL
+            WHERE PTU.PricingTierId IS NOT NULL
+              AND PT.PricingTierId IS NULL
+        )
+        BEGIN
+            ROLLBACK TRANSACTION;
+            RETURN 9; -- InvalidPricingTierId
         END;
 
         UPDATE PTU

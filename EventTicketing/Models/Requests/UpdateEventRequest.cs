@@ -8,6 +8,7 @@ public sealed class UpdateEventRequest
     [StringLength(256)]
     public string Name { get; set; } = string.Empty;
 
+    [StringLength(512)]
     public string? Description { get; set; }
 
     [Required]

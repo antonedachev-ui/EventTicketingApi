@@ -7,6 +7,7 @@ public sealed class CreateEventRequest
     [Required]
     [StringLength(256)]
     public string Name { get; set; } = string.Empty;
+    [StringLength(512)]
     public string? Description { get; set; }
     [Required]
     [StringLength(256)]

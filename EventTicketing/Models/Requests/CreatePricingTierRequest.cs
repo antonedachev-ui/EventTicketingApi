@@ -8,7 +8,7 @@ public sealed class CreatePricingTierRequest
     [StringLength(256)]
     public string Name { get; set; } = string.Empty;
 
-    [Range(0, double.MaxValue)]
+    [Range(typeof(decimal), "0", "99999999.99", ParseLimitsInInvariantCulture = true)]
     public decimal Price { get; set; }
     [Range(1, int.MaxValue)]
     public int TotalCapacity { get; set; }
