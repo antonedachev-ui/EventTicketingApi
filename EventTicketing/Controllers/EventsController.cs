@@ -32,6 +32,13 @@ namespace EventTicketing.Api.Controllers
             return result.ToActionResult(this);
         }
 
+        [HttpGet]
+        public async Task<ActionResult<List<EventListItemResponse>>> GetAllEvents(CancellationToken cancellationToken)
+        {
+            var result = await _eventDataAccess.GetAllEventsAsync(cancellationToken);
+            return result.ToActionResult(this);
+        }
+
         [HttpPut("{eventId:int}")]
         public async Task<ActionResult<EventResponse>> UpdateEvent(
             int eventId, [FromBody] UpdateEventRequest request, CancellationToken cancellationToken)

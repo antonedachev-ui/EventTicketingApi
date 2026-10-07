@@ -9,6 +9,7 @@ namespace EventTicketing.Api.Data
 
         Task<OperationResult<EventCreateResult, EventResponse>> CreateEventAsync(CreateEventRequest request, CancellationToken cancellationToken);
         Task<OperationResult<EventGetResult, EventResponse>> GetEventAsync(int eventId, CancellationToken cancellationToken);
+        Task<OperationResult<EventGetAllResult, List<EventListItemResponse>>> GetAllEventsAsync(CancellationToken cancellationToken);
         Task<OperationResult<EventUpdateResult, EventResponse>> UpdateEventAsync(int eventId, UpdateEventRequest request, CancellationToken cancellationToken);
         Task<EventDeleteResult> DeleteEventAsync(int eventId, CancellationToken cancellationToken);
         Task<OperationResult<EventAvailabilityResult, EventAvailabilityResponse>> GetEventAvailabilityAsync(int eventId, CancellationToken cancellationToken);

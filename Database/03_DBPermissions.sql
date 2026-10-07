@@ -48,6 +48,9 @@ GRANT EXECUTE
     ON dbo.Event_Get TO EventTicketingService;
 
 GRANT EXECUTE
+    ON dbo.Event_GetAll TO EventTicketingService;
+
+GRANT EXECUTE
     ON dbo.Event_Update TO EventTicketingService;
 
 GRANT EXECUTE

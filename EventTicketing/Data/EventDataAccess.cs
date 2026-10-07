@@ -6,6 +6,8 @@ using System.Data;
 
 namespace EventTicketing.Api.Data
 {
+    // Adapts HTTP DTOs to the stored-procedure contract and maps SQL results back to DTOs.
+    // Business outcomes remain enum values; unexpected database failures propagate.
     public sealed class EventDataAccess : IEventDataAccess
     {
         private readonly ISqlStoredProcedureExecutor _executor;
@@ -18,6 +20,7 @@ namespace EventTicketing.Api.Data
         public async Task<OperationResult<EventCreateResult, EventResponse>> CreateEventAsync(
             CreateEventRequest request, CancellationToken cancellationToken = default)
         {
+            // New tiers have no ID; SQL assigns their identities when it inserts the TVP rows.
             var tiers = CreatePricingTierTable();
             foreach (var tier in request.PricingTiers)
             {
@@ -33,6 +36,7 @@ namespace EventTicketing.Api.Data
 
             return new OperationResult<EventCreateResult, EventResponse>
             {
+                // The executor returns an integer; the operation exposes only defined outcomes.
                 Status = GetStatus<EventCreateResult>(result.ReturnCode, "Event_Create"),
                 Data = result.Data
             };
@@ -49,6 +53,8 @@ namespace EventTicketing.Api.Data
                 },
                 async (reader, ct) =>
                 {
+                    // Event_Get always emits an event result set followed by a tier result set,
+                    // even when the event was not found and both sets contain no rows.
                     EventResponse? eventResponse = null;
 
                     if (await reader.ReadAsync(ct))
@@ -90,9 +96,27 @@ namespace EventTicketing.Api.Data
             };
         }
 
+        public async Task<OperationResult<EventGetAllResult, List<EventListItemResponse>>> GetAllEventsAsync(
+            CancellationToken cancellationToken = default)
+        {
+            var result = await _executor.ExecuteAsync(
+                "dbo.Event_GetAll",
+                null,
+                (reader, ct) => reader.ReadListAsync(MapEventListItem, ct),
+                cancellationToken);
+
+            return new OperationResult<EventGetAllResult, List<EventListItemResponse>>
+            {
+                Status = GetStatus<EventGetAllResult>(result.ReturnCode, "Event_GetAll"),
+                Data = result.Data
+            };
+        }
+
         public async Task<OperationResult<EventUpdateResult, EventResponse>> UpdateEventAsync(
             int eventId, UpdateEventRequest request, CancellationToken cancellationToken = default)
         {
+            // The TVP is the desired active tier set: null IDs create tiers; existing IDs
+            // update tiers. SQL preserves sold quantity and soft-deletes omitted tiers.
             var tiers = CreatePricingTierTable();
             foreach (var tier in request.PricingTiers)
             {
@@ -121,6 +145,7 @@ namespace EventTicketing.Api.Data
         public async Task<EventDeleteResult> DeleteEventAsync(
             int eventId, CancellationToken cancellationToken = default)
         {
+            // Event_Delete has no result set; its RETURN code alone describes the outcome.
             var result = await _executor.ExecuteAsync<object?>(
                 "dbo.Event_Delete",
                 parameters => parameters.Add("@EventId", SqlDbType.Int).Value = eventId,
@@ -133,6 +158,7 @@ namespace EventTicketing.Api.Data
         public async Task<OperationResult<EventAvailabilityResult, EventAvailabilityResponse>> GetEventAvailabilityAsync(
             int eventId, CancellationToken cancellationToken = default)
         {
+            // An empty list is valid for an unknown, deleted, or unavailable event.
             var result = await _executor.ExecuteAsync(
                 "dbo.Event_GetAvailability",
                 parameters => parameters.Add("@EventId", SqlDbType.Int).Value = eventId,
@@ -153,6 +179,7 @@ namespace EventTicketing.Api.Data
         public async Task<OperationResult<EventSalesSummaryResult, EventSalesSummaryResponse>> GetEventSalesSummaryAsync(
             int eventId, CancellationToken cancellationToken = default)
         {
+            // SQL includes soft-deleted tiers and uses the purchase-time UnitPrice.
             var result = await _executor.ExecuteAsync<EventSalesSummaryResponse?>(
                 "dbo.Event_GetSalesSummary",
                 parameters => parameters.Add("@EventId", SqlDbType.Int).Value = eventId,
@@ -169,6 +196,8 @@ namespace EventTicketing.Api.Data
         public async Task<OperationResult<TicketPurchaseResult, TicketPurchaseResponse>> PurchaseTicketAsync(
             PurchaseTicketRequest request, CancellationToken cancellationToken = default)
         {
+            // Inventory is decremented conditionally inside Ticket_Purchase's transaction;
+            // this call does not treat an earlier availability query as a reservation.
             var result = await _executor.ExecuteAsync<TicketPurchaseResponse?>(
                 "dbo.Ticket_Purchase",
                 parameters =>
@@ -206,7 +235,7 @@ namespace EventTicketing.Api.Data
 
         private static DataTable CreatePricingTierTable()
         {
-            // The column order and types must match dbo.PricingTierInputType.
+            // SQL Server TVPs match by column position, so order and types must match dbo.PricingTierInputType.
             var tiers = new DataTable();
             tiers.Columns.Add("PricingTierId", typeof(int));
             tiers.Columns.Add("Name", typeof(string));
@@ -218,7 +247,8 @@ namespace EventTicketing.Api.Data
         private static async Task<EventResponse?> ReadEventWithTiersAsync(
             SqlDataReader reader, CancellationToken cancellationToken, string procedureName)
         {
-            // Create and update return no result sets for expected business failures.
+            // Create and update return no result sets for expected business failures;
+            // the executor still retrieves their RETURN code after this reader closes.
             if (reader.FieldCount == 0)
             {
                 return null;
@@ -248,6 +278,7 @@ namespace EventTicketing.Api.Data
         private static TStatus GetStatus<TStatus>(int returnCode, string procedureName)
             where TStatus : struct, Enum
         {
+            // An unknown code is a broken SQL/C# contract, not a business outcome.
             var status = (TStatus)Enum.ToObject(typeof(TStatus), returnCode);
             if (!Enum.IsDefined(status))
             {
@@ -276,6 +307,24 @@ namespace EventTicketing.Api.Data
 
                 // SQL datetime2 does not retain DateTime.Kind; this column stores UTC values.
                 EventDateTimeUtc = DateTime.SpecifyKind(reader.GetDateTime(reader.GetOrdinal("EventDateTimeUtc")),DateTimeKind.Utc)
+            };
+        }
+
+        private static EventListItemResponse MapEventListItem(SqlDataReader reader)
+        {
+            var descriptionOrdinal = reader.GetOrdinal("Description");
+
+            return new EventListItemResponse
+            {
+                EventId = reader.GetInt32(reader.GetOrdinal("EventId")),
+                Name = reader.GetString(reader.GetOrdinal("Name")),
+                Description = reader.IsDBNull(descriptionOrdinal)
+                    ? null
+                    : reader.GetString(descriptionOrdinal),
+                Venue = reader.GetString(reader.GetOrdinal("Venue")),
+                // SQL datetime2 does not retain DateTime.Kind; this column stores UTC values.
+                EventDateTimeUtc = DateTime.SpecifyKind(
+                    reader.GetDateTime(reader.GetOrdinal("EventDateTimeUtc")), DateTimeKind.Utc)
             };
         }
 

@@ -21,6 +21,20 @@ namespace EventTicketing.Api.Controllers
             };
         }
 
+        public static ActionResult<List<EventListItemResponse>> ToActionResult(
+            this OperationResult<EventGetAllResult, List<EventListItemResponse>> result,
+            ControllerBase controller)
+        {
+            return result.Status switch
+            {
+                EventGetAllResult.Success when result.Data is not null => controller.Ok(result.Data),
+                EventGetAllResult.Success => throw new InvalidOperationException(
+                    "Event_GetAll succeeded without returning an event list."),
+                EventGetAllResult.EventNotFound => controller.NotFound(),
+                _ => throw new InvalidOperationException($"Unexpected Event_GetAll result: {result.Status}")
+            };
+        }
+
         public static ActionResult<EventResponse> ToActionResult(
             this OperationResult<EventCreateResult, EventResponse> result,
             ControllerBase controller)

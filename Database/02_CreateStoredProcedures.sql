@@ -202,6 +202,25 @@ BEGIN
 END
 GO
 
+CREATE OR ALTER PROCEDURE dbo.Event_GetAll
+AS 
+BEGIN
+
+    SET NOCOUNT ON;    
+
+    SELECT E.EventId,
+        E.[Name],
+        E.[Description],
+        E.Venue,
+        E.EventDateTimeUtc
+    FROM dbo.[Event] AS E
+    WHERE E.EventDeletionTimestampUtc IS NULL;
+
+    IF @@ROWCOUNT = 0 RETURN 1; -- EventNotFound
+    RETURN 0; -- Success
+END
+GO
+
 CREATE OR ALTER PROCEDURE dbo.Event_Update
     @EventId INT,
     @Name             NVARCHAR(256),

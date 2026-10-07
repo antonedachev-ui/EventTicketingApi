@@ -90,6 +90,44 @@ public sealed class EventsControllerTests
     }
 
     [Test]
+    public async Task GetAllEvents_ReturnsEventListWithoutPricingTiers()
+    {
+        var events = new List<EventListItemResponse>
+        {
+            new() { EventId = 42, Name = "Concert", Venue = "Hall", EventDateTimeUtc = DateTime.UtcNow }
+        };
+        var dataAccess = new FakeEventDataAccess
+        {
+            GetAllResult = new OperationResult<EventGetAllResult, List<EventListItemResponse>>
+            {
+                Status = EventGetAllResult.Success,
+                Data = events
+            }
+        };
+
+        var response = await new EventsController(dataAccess).GetAllEvents(CancellationToken.None);
+
+        Assert.That((response.Result as OkObjectResult)?.Value, Is.SameAs(events));
+    }
+
+    [Test]
+    public async Task GetAllEvents_ReturnsNotFoundWhenNoEventsExist()
+    {
+        var dataAccess = new FakeEventDataAccess
+        {
+            GetAllResult = new OperationResult<EventGetAllResult, List<EventListItemResponse>>
+            {
+                Status = EventGetAllResult.EventNotFound,
+                Data = []
+            }
+        };
+
+        var response = await new EventsController(dataAccess).GetAllEvents(CancellationToken.None);
+
+        Assert.That(response.Result, Is.TypeOf<NotFoundResult>());
+    }
+
+    [Test]
     public async Task UpdateEvent_ReturnsUpdatedEvent()
     {
         var eventResponse = new EventResponse { EventId = 42, Name = "Renamed concert" };

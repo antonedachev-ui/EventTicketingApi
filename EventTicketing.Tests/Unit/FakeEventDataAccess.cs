@@ -9,6 +9,7 @@ internal sealed class FakeEventDataAccess : IEventDataAccess
 {
     public OperationResult<EventCreateResult, EventResponse>? CreateResult { get; set; }
     public OperationResult<EventGetResult, EventResponse>? GetResult { get; set; }
+    public OperationResult<EventGetAllResult, List<EventListItemResponse>>? GetAllResult { get; set; }
     public OperationResult<EventUpdateResult, EventResponse>? UpdateResult { get; set; }
     public EventDeleteResult? DeleteResult { get; set; }
     public OperationResult<EventAvailabilityResult, EventAvailabilityResponse>? AvailabilityResult { get; set; }
@@ -23,6 +24,10 @@ internal sealed class FakeEventDataAccess : IEventDataAccess
     public Task<OperationResult<EventGetResult, EventResponse>> GetEventAsync(
         int eventId, CancellationToken cancellationToken) =>
         Task.FromResult(GetResult ?? throw new InvalidOperationException("Get result was not configured."));
+
+    public Task<OperationResult<EventGetAllResult, List<EventListItemResponse>>> GetAllEventsAsync(
+        CancellationToken cancellationToken) =>
+        Task.FromResult(GetAllResult ?? throw new InvalidOperationException("Get-all result was not configured."));
 
     public Task<OperationResult<EventUpdateResult, EventResponse>> UpdateEventAsync(
         int eventId, UpdateEventRequest request, CancellationToken cancellationToken) =>

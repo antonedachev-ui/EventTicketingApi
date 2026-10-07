@@ -40,6 +40,7 @@ The solution deliberately keeps the architecture relatively small and avoids int
 | Method | Endpoint | Description |
 |---|---|---|
 | `POST` | `/api/events` | Create an event with pricing tiers |
+| `GET` | `/api/events` | List active events without pricing tiers; 404 if none exist |
 | `GET` | `/api/events/{id}` | Get an event and its pricing tiers |
 | `PUT` | `/api/events/{id}` | Update an event and its pricing tiers |
 | `DELETE` | `/api/events/{id}` | Soft-delete an event |
@@ -155,6 +156,10 @@ The .NET application maps database outcomes to application/API results.
 
 User-facing error messages are not stored in the database.
 
+The API returns generic Problem Details for unhandled exceptions. Production-grade error logging and alerting were outside the scope of this exercise. A production system should log technical failures with useful request context while keeping SQL details and secrets out of HTTP responses.
+
+Stored procedures roll back and rethrow unexpected SQL failures. There is no deadlock-specific handling in the database scripts and no application retry policy for deadlock victims, so a deadlock is treated as an unexpected error. A production system should define a bounded retry strategy that is safe for ticket purchases.
+
 ## Security
 
 Authentication and authorization are currently outside the scope of this exercise.
@@ -215,8 +220,6 @@ Run the scripts in the `Database` directory in order:
 
 `04_InsertTestData.sql` is optional and inserts sample development data.
 
-Do not commit the application login's password or connection string to source control.
-
 ### Connection string
 
 For local development, configure the `EventTicketing` connection string using .NET User Secrets rather than committing credentials to the repository. User Secrets are loaded by default when the API runs in the `Development` environment; configure the connection string separately for other environments.
@@ -245,7 +248,8 @@ Areas that would require further consideration in a production system include:
 - Purchase cancellation and refunds
 - Reservation/temporary ticket holds
 - Idempotency of purchase requests
-- Observability and operational monitoring
+- Production-grade error logging, alerting, and operational monitoring
+- Deadlock handling and safe retry strategy
 - Rate limiting
 - Deployment and database migration strategy
 - Data-retention policy

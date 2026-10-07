@@ -44,3 +44,12 @@ Content-Type: application/json
   "pricingTierId": 8,
   "quantity": 100
 }
+
+###
+
+GET {{EventTicketing_HostAddress}}/api/events/
+
+
+###
+
+GET {{EventTicketing_HostAddress}}/api/events/3/sales-summary
